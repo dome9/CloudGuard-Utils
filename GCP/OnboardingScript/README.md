@@ -20,7 +20,7 @@ git clone https://github.com/dome9/CloudGuard-Utils.git
 3. Change to the newly created 'CloudGuard-Utils/GcpAutoOnboarding' directory:
 
 ```
-cd CloudGuard-Utils/GcpAutoOnboarding
+cd CloudGuard-Utils/GCP/onboardingScript
 ```
 
 4. Copy the desired gcloud shell script from the 'examples' directory to the current directory:
