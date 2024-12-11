@@ -1,4 +1,4 @@
-# GcpAutoOnboarding
+# GCP Onboarding
 Deploy a serverless function for onboarding and monitoring GCP projects in CloudGuard.\
 The function is deployed in the project specificed by the user in < project_id > script input parameter.\
 The function will scan all projects in the organization of < project_id > and will onboard them to CloudGuard.\
@@ -17,10 +17,10 @@ The function creates a service account per project and uses them to onboard to C
 git clone https://github.com/dome9/CloudGuard-Utils.git
 ```
 
-3. Change to the newly created 'CloudGuard-Utils/GcpAutoOnboarding' directory:
+3. Change to the newly created 'CloudGuard-Utils/GCP/OnboardingScript' directory:
 
 ```
-cd CloudGuard-Utils/GCP/onboardingScript
+cd CloudGuard-Utils/GCP/OnboardingScript
 ```
 
 4. Copy the desired gcloud shell script from the 'examples' directory to the current directory:
@@ -44,6 +44,7 @@ base_url=
 6. Execute the gcloud shell script to begin the install:
 
 ```
+chmod +x gcloud-with-secrets.sh
 ./gcloud-with-secrets.sh
 ```
 
