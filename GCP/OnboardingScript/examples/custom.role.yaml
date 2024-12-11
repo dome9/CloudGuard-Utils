@@ -1,0 +1,4 @@
+title: D9 Autobrd
+description: Custom role for d9-autobrd-gcp cloud function
+includedPermissions:
+- iam.serviceAccounts.actAs

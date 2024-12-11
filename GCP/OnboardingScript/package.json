@@ -1,0 +1,26 @@
+{
+  "name": "d9-autobrd",
+  "version": "1.0.0",
+  "description": "Serverless function for automated onboarding of AWS, Azure, and GCP cloud accounts for Dome9.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dana-at-cp/d9-autobrd.git"
+  },
+  "author": "Dana James Traversie",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/dana-at-cp/d9-autobrd/issues"
+  },
+  "homepage": "https://github.com/dana-at-cp/d9-autobrd#readme",
+  "dependencies": {
+    "@google-cloud/functions-framework": "1.9.0",
+    "axios": "^0.21.4",
+    "googleapis": "^65.0.0",
+    "q": "^1.5.1",
+    "uuid": "^8.3.2"
+  }
+}
