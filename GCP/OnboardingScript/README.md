@@ -42,9 +42,10 @@ base_url=
 ```
 
 6. Execute the gcloud shell script to begin the install:
-
 ```
 chmod +x gcloud-with-secrets.sh
+```
+```
 ./gcloud-with-secrets.sh
 ```
 
