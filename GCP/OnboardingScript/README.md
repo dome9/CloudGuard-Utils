@@ -28,8 +28,12 @@ cd CloudGuard-Utils/GCP/OnboardingScript
 ```
 cp examples/gcloud-with-secrets.sh .
 ```
+5. Generate a pre shared key (PSK) using the instructions provided in the following link: 
 
-5. Edit the indicated section of the gcloud shell script. Provide the values that are correct and necessary for your environment: (If left empty, ``base_url`` will default to ``https://api.dome9.com/v2``)
+    https://cloud.google.com/network-connectivity/docs/vpn/how-to/generating-pre-shared-key
+
+
+6. Edit the indicated section of the gcloud shell script. Provide the values that are correct and necessary for your environment: (If left empty, ``base_url`` will default to ``https://api.dome9.com/v2``)
 
 ```
 ##### MUST EDIT THE VALUES BELOW #####
@@ -41,7 +45,7 @@ base_url=
 ##### MUST EDIT THE VALUES ABOVE #####
 ```
 
-6. Execute the gcloud shell script to begin the install:
+7. Execute the gcloud shell script to begin the install:
 ```
 chmod +x gcloud-with-secrets.sh
 ```
@@ -49,10 +53,10 @@ chmod +x gcloud-with-secrets.sh
 ./gcloud-with-secrets.sh
 ```
 
-7. The gcloud shell script will finish by deploying the cloud function in the GCP environment.
+8. The gcloud shell script will finish by deploying the cloud function in the GCP environment.
 
 
-8. Run the newly created cloud function in one of the following ways:
+9. Run the newly created cloud function in one of the following ways:
 ```
 GET https://<your_cloud_function_url_goes_here>?psk=<your_psk_goes_here>
 ```
