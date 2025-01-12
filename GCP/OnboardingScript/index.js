@@ -16,6 +16,8 @@ const { v4: uuidv4 } = require('uuid');
 const auth = require('./lib/auth');
 const dome9 = require('./lib/dome9');
 const gcp = require('./lib/gcp');
+let onboarded = 0;
+let failed = 0;
 
 /**
  * Onboards GCP projects to Check Point CloudGuard CSPM a.k.a. Dome9.
@@ -54,6 +56,7 @@ exports.d9AutobrdOnboard = async (req, res) => {
     }
     if (gcpIsGo) {
       results = await onboardGoogleProjects();
+      jsonResp['results'] = results
       console.log("onboarded:", results.onboarded, "failed:", results.failed, "skipped:", results.skipped, "total:", results.total);
     }
   } catch (e) {
@@ -65,75 +68,76 @@ exports.d9AutobrdOnboard = async (req, res) => {
   res.send(jsonResp);
 };
 
+async function createAccountAsync(p, saPrivateKeyData, retries = 3, delay = 1000) {
+    try {
+        var r = await dome9.createGoogleCloudAccount(p['name'], JSON.parse(saPrivateKeyData));
+        if (r.id) {
+            console.log(p['projectId'], "=>", "Project was onboarded successfully");
+            onboarded++;
+        }
+    } catch (error) {
+        if (retries === 0) {
+            console.error(`${p['projectId']}, '=>', "Error creating project in Dome9. No more retries.", ${error.toString()}`);
+            throw error;
+        } else {
+            console.log(`${p['projectId']} => Error creating project in Dome9. Retrying... attempts left: ${retries - 1}`);
+            await new Promise(res => setTimeout(res, delay));
+            return createAccountAsync(p, saPrivateKeyData, retries - 1, delay);
+        }
+    }
+}
+
+async function onboardAsync(p, cloudAccountsMap, missingPermissionsSet, retries = 3, delay = 1000) {
+    try {
+      if (clearToBoard(p, cloudAccountsMap)) {
+        var serviceAccount = await gcp.getCloudGuardServiceAccount(p['projectId']);
+        if (!serviceAccount['email']) {
+          serviceAccount = await gcp.createServiceAccount(p['projectId']);
+          console.log(p['projectId'], "=>", "Created 'CloudGuard-Connect' service account");
+        } else {
+          await gcp.updateProjectIAMPolicy(p, serviceAccount);
+          await gcp.deleteServiceAccountKeys(p['projectId'], serviceAccount['email']);
+          console.log(p['projectId'], "=>", "Deleted all 'CloudGuard-Connect' service account keys");
+        }
+        var saKey = await gcp.createServiceAccountKey(p['projectId'], serviceAccount['email']);
+        console.log(p['projectId'], "=>", "Created new 'CloudGuard-Connect' service account key");
+        var saPrivateKeyData = Buffer.from(saKey['privateKeyData'], 'base64').toString();
+        await createAccountAsync(p, saPrivateKeyData);
+      }
+      if (await gcp.enableRequiredAPIServices(p['projectId'])) {
+          console.log(`${p['projectId']} => Enabled all required API services in project`);
+      }
+      return true;
+    } catch (error) {
+        if (retries === 0) {
+            failed++;
+            console.error(`${p['projectId']} => "Error onboarding project. No more retries.`, error.toString());
+            return false;
+        }
+        console.log(`${p['projectId']} => Error onboarding project. Retrying... attempts left: ${retries - 1}`);
+        await new Promise(res => setTimeout(res, delay));
+        return onboardAsync(p, cloudAccountsMap, missingPermissionsSet, retries - 1, delay);
+    }
+}
+
 const onboardGoogleProjects = async () => {
   var cloudAccountsMap = await dome9.getGoogleCloudAccountsMap();
   var missingPermissionsSet = await dome9.getMissingPermissionsSet();
   var projects = await gcp.listProjects();
   var total = projects.length;
-  var onboarded = 0;
-  var failed = 0;
+  onboarded = 0;
+  failed = 0;
+
   for (let p of projects) {
-    try {
-      if (clearToBoard(p, cloudAccountsMap)) {
-        if (await gcp.enableRequiredAPIServices(p['projectId'])) {
-          console.log(p['projectId'], "=>", "Enabled all required API services in project");
-        }
-        var serviceAccount = await gcp.getCloudGuardServiceAccount(p['projectId']);
-        if (!serviceAccount['email']) {
-          var saNew = await gcp.createServiceAccount(p['projectId']);
-          console.log(p['projectId'], "=>", "Created 'CloudGuard-Connect' service account");
-          if (saNew['email']) {
-            await gcp.updateProjectIAMPolicy(p, saNew);
-          }
-        } else {
-          await gcp.updateProjectIAMPolicy(p, serviceAccount);
-          await gcp.deleteServiceAccountKeys(p['projectId'], serviceAccount['email']);
-          console.log(p['projectId'], "=>", "Deleted all 'CloudGuard-Connect' service account keys");
-          var saKey = await gcp.createServiceAccountKey(p['projectId'], serviceAccount['email']);
-          console.log(p['projectId'], "=>", "Created new 'CloudGuard-Connect' service account key");
-          var saPrivateKeyData = Buffer.from(saKey['privateKeyData'], 'base64').toString();
-          var r = await dome9.createGoogleCloudAccount(p['name'], JSON.parse(saPrivateKeyData));
-          if (r.id) {
-            console.log(p['projectId'], "=>", "Project was onboarded successfully");
-            if (!await gcp.addOnboardedLabel(p)) {
-              console.log(p['projectId'], "=>", "Failed to add onboarded label to project");
-            }
-            onboarded++;
-          }
-        }
-      } else if (hasMissingPermissions(p, cloudAccountsMap, missingPermissionsSet)) {
-        console.log(p['projectId'], "=>", "Project has missing permissions");
-        if (await gcp.enableRequiredAPIServices(p['projectId'])) {
-          console.log(p['projectId'], "=>", "Enabled all required API services in project");
-        }
-      } else {
-        if (!await gcp.addOnboardedLabel(p)) {
-          console.log(p['projectId'], "=>", "Failed to add onboarded label to project");
-        }
-      }
-    } catch (e) {
-      console.log(p['projectId'], '=>', "Error onboarding project");
-      console.log(e);
-      failed++;
-    }
+      console.log(`${p['projectId']} => Starting onboarding process`);
+      await onboardAsync(p, cloudAccountsMap, missingPermissionsSet);
   }
   return {onboarded: onboarded, failed: failed, skipped: (total - onboarded - failed), total: total};
-};
-
-const hasMissingPermissions = (project, cloudAccountsMap, missingPermissionsSet) => {
-  var result = false;
-  const projectId = project['projectId'];
-  if (isProjectInDome9(projectId, cloudAccountsMap)) {
-    const cloudAccount = cloudAccountsMap.get(projectId);
-    result = missingPermissionsSet.has(cloudAccount.id);
-  }
-  return result;
 };
 
 const clearToBoard = (project, cloudAccountsMap) => {
   var result = false;
   const projectId = project['projectId'];
-  const lifecycleState = project['lifecycleState'];
   const projectInDome9 = isProjectInDome9(projectId, cloudAccountsMap);
   if (projectInDome9) {
     console.log(projectId, "=>", "Project was already onboarded");
