@@ -1,5 +1,15 @@
 #!/bin/bash
 
+##### MUST EDIT THE VALUES BELOW #####
+project_id=<your_project_id_goes_here>
+d9_id=<your_d9_api_id_goes_here>
+d9_secret=<your_d9_api_secret_goes_here>
+psk=<your_psk_goes_here>
+base_url=
+EXCLUDE_PROJECTS=
+INCLUDE_PROJECTS=
+##### MUST EDIT THE VALUES ABOVE #####
+
 ##### NO NEED TO EDIT THE VALUES BELOW #####
 role_id=d9.autobrd
 role_title="D9 Autobrd"
@@ -9,21 +19,13 @@ secrets_d9_secret=d9_autobrd_d9_secret
 secrets_psk=d9_autobrd_psk
 ##### NO NEED TO EDIT THE VALUES ABOVE #####
 
-##### MUST EDIT THE VALUES BELOW #####
-project_id=<your_project_id_goes_here>
-d9_id=<your_d9_api_id_goes_here>
-d9_secret=<your_d9_api_secret_goes_here>
-psk=<your_psk_goes_here>
-base_url=
-##### MUST EDIT THE VALUES ABOVE #####
-
 # Roles
 VIEWER_ROLE="roles/viewer"
 IAM_SECURITY_REVIEWER="roles/iam.securityReviewer"
 CLOUD_ASSET_VIEWER="roles/cloudasset.viewer"
 SERVICE_USAGE_CONSUMER="roles/serviceusage.serviceUsageConsumer"
 
-CSMP_ROLES_LIST=(
+CSPM_ROLES_LIST=(
   $VIEWER_ROLE
   $IAM_SECURITY_REVIEWER
   $CLOUD_ASSET_VIEWER
@@ -52,6 +54,8 @@ EOF
 cat << EOF > runtime.env.yaml
 D9_BASE_URL: "${base_url:-https://api.dome9.com/v2}"
 GCP_PROJECT_LIST_LIMIT: "10"
+EXCLUDE_PROJECTS: "$EXCLUDE_PROJECTS"
+INCLUDE_PROJECTS: "$INCLUDE_PROJECTS"
 EOF
 
 cat << EOF > .gcloudignore
@@ -108,8 +112,36 @@ echo $secrets_rp_d9_id
 echo $secrets_rp_d9_secret
 echo $secrets_rp_psk
 
-for role in ${CSMP_ROLES_LIST[@]}; do
-  for binding_project_id in $(gcloud projects list |grep PROJECT_ID |awk '{ print $2 }'); do
+# Function to check if a string matches any pattern in a space-separated list
+match_patterns() {
+    local value="$1"
+    local patterns="$2"
+
+    for pattern in $patterns; do
+        if [[ "$value" == $pattern ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Get all projects and filter them
+filtered_projects=$(gcloud projects list --format="value(projectId)" | while read curr_project_id; do
+    # Skip if project matches any exclude pattern
+    if [[ -n "$EXCLUDE_PROJECTS" ]] && match_patterns "$curr_project_id" "$EXCLUDE_PROJECTS"; then
+        continue
+    fi
+
+    # Skip if INCLUDE_PROJECTS is set and project doesn't match any include pattern
+    if [[ -n "$INCLUDE_PROJECTS" ]] && ! match_patterns "$curr_project_id" "$INCLUDE_PROJECTS"; then
+        continue
+    fi
+
+    echo "$curr_project_id"
+done)
+
+for role in ${CSPM_ROLES_LIST[@]}; do
+  for binding_project_id in $filtered_projects; do
     gcloud projects add-iam-policy-binding $binding_project_id --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" --role=$role
   done
 done
