@@ -77,12 +77,12 @@ async function createAccountAsync(p, saPrivateKeyData, retries = 3, delay = 1000
         }
     } catch (error) {
         if (retries === 0) {
-            console.error(`${p['projectId']}, '=>', "Error creating project in Dome9. No more retries.", ${error.toString()}`);
+            console.error(`${p['projectId']}, '=>', "Error creating project in Dome9. No more retries.", ${error}`);
             throw error;
         } else {
             console.log(`${p['projectId']} => Error creating project in Dome9. Retrying... attempts left: ${retries - 1}`);
             await new Promise(res => setTimeout(res, delay));
-            return createAccountAsync(p, saPrivateKeyData, retries - 1, delay);
+            return createAccountAsync(p, saPrivateKeyData, retries - 1, delay + 1000);
         }
     }
 }
@@ -111,12 +111,12 @@ async function onboardAsync(p, cloudAccountsMap, missingPermissionsSet, retries 
     } catch (error) {
         if (retries === 0) {
             failed++;
-            console.error(`${p['projectId']} => "Error onboarding project. No more retries.`, error.toString());
+            console.error(`${p['projectId']} => "Error onboarding project. No more retries.`, error);
             return false;
         }
         console.log(`${p['projectId']} => Error onboarding project. Retrying... attempts left: ${retries - 1}`);
         await new Promise(res => setTimeout(res, delay));
-        return onboardAsync(p, cloudAccountsMap, missingPermissionsSet, retries - 1, delay);
+        return onboardAsync(p, cloudAccountsMap, missingPermissionsSet, retries - 1, delay + 1000);
     }
 }
 
