@@ -1,12 +1,12 @@
 #!/bin/bash
 
 ##### MUST EDIT THE VALUES BELOW #####
-project_id=yohain1
-d9_id=a9da8953-6cd8-4e70-976b-a428b9c66d4d
-d9_secret=e9yp9jtu8q9qtuxezrqwc7cp
-psk=kcClcCOas/Vh9hYyhCWpIwuivTlsGDRl
+project_id=<your_project_id_goes_here>
+d9_id=<your_d9_api_id_goes_here>
+d9_secret=<your_d9_api_secret_goes_here>
+psk=<your_psk_goes_here>
 base_url=
-EXCLUDE_PROJECTS="chkp-*"
+EXCLUDE_PROJECTS=
 INCLUDE_PROJECTS=
 ##### MUST EDIT THE VALUES ABOVE #####
 
