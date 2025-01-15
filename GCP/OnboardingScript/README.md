@@ -6,7 +6,7 @@ The function creates a service account per project and uses them to onboard to C
 
 ## Prerequisites for installation
 
-1. A user with appropriate permissions within the GCP environment (e.g. owner/editor in each project) to complete the installation via a gcloud shell script.
+1. A user with owner permissions for each project in the GCP environment, to complete the installation via a gcloud shell script.
 
 ## Install via gcloud shell
 
@@ -50,7 +50,8 @@ INCLUDE_PROJECTS=
 * Both support prefix wildcards (e.g EXCLUDE_PROJECTS="sys-\*" will exclude all projects starting with "sys-").
 * For a list of exclusion or inclusion, please separate using whitespace (e.g EXCLUDE_PROJECTS="sys-\* test-\*"). 
 * If both are defined, INCLUDE_PROJECTS will take precedence.
-```
+
+
 7. Execute the gcloud shell script to begin the install:
 ```
 chmod +x gcloud-with-secrets.sh

@@ -17,9 +17,9 @@
   },
   "homepage": "https://github.com/dana-at-cp/d9-autobrd#readme",
   "dependencies": {
-    "@google-cloud/functions-framework": "1.9.0",
-    "axios": "^0.21.4",
-    "googleapis": "^65.0.0",
+    "@google-cloud/functions-framework": "3.4.5",
+    "axios": "^1.7.9",
+    "googleapis": "^144.0.0",
     "q": "^1.5.1",
     "uuid": "^8.3.2"
   }

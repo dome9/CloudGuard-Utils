@@ -13,44 +13,38 @@
 // limitations under the License.
 
 const {google} = require('googleapis');
-const Q = require('q');
 
-const GCP_PROJECT_LIST_LIMIT = process.env.GCP_PROJECT_LIST_LIMIT ? process.env.GCP_PROJECT_LIST_LIMIT : 100;
+const GCP_PROJECT_LIST_LIMIT = process.env.GCP_PROJECT_LIST_LIMIT || 100;
 
 exports.updateProjectIAMPolicy = async (project, serviceAccount) => {
-    var pushedViewer = false;
-    var pushedSecurityReviewer = false;
-    var pushedCloudAssetViewer = false;
-    var securityReviewerRoleName = 'roles/iam.securityReviewer';
-    var viewerRoleName = 'roles/viewer';
-    var cloudAssetViewerRoleName = 'roles/cloudasset.viewer';
-    var member = 'serviceAccount:' + serviceAccount['email'];
-    var iamPolicy = await this.getProjectIAMPolicy(project['projectId']);
-    iamPolicy['bindings'].forEach(b => {
-        if (b['role'] == viewerRoleName) {
-            b['members'].push(member);
-            pushedViewer = true;
-        }
-        if (b['role'] == securityReviewerRoleName) {
-            b['members'].push(member);
-            pushedSecurityReviewer = true;
-        }
-        if (b['role'] == cloudAssetViewerRoleName) {
-            b['members'].push(member);
-            pushedCloudAssetViewer = true;
+    const member = `serviceAccount:${serviceAccount.email}`;
+    const iamPolicy = await this.getProjectIAMPolicy(project.projectId);
+
+    const rolesToAdd = [
+        { role: 'roles/viewer', pushed: false },
+        { role: 'roles/iam.securityReviewer', pushed: false },
+        { role: 'roles/cloudasset.viewer', pushed: false },
+        { role: 'roles/serviceusage.serviceUsageConsumer', pushed: false },
+    ];
+
+    iamPolicy.bindings.forEach(binding => {
+        rolesToAdd.forEach(roleObj => {
+            if (binding.role === roleObj.role) {
+                if (!binding.members.includes(member)) {
+                    binding.members.push(member);
+                    roleObj.pushed = true;
+                }
+            }
+        });
+    });
+
+    rolesToAdd.forEach(roleObj => {
+        if (!roleObj.pushed) {
+            iamPolicy.bindings.push({ role: roleObj.role, members: [member] });
         }
     });
-    if (!pushedViewer) {
-        iamPolicy['bindings'].push({role: viewerRoleName, members: [member]});
-    }
-    if (!pushedSecurityReviewer) {
-        iamPolicy['bindings'].push({role: securityReviewerRoleName, members: [member]});
-    }
-    if (!pushedCloudAssetViewer) {
-        iamPolicy['bindings'].push({role: cloudAssetViewerRoleName, members: [member]});
-    }
-    var updatedIamPolicy = await this.setProjectIAMPolicy(project['projectId'], iamPolicy);
-    return updatedIamPolicy;
+
+    return await this.setProjectIAMPolicy(project.projectId, iamPolicy);
 };
 
 exports.getProjectIAMPolicy = async (projectId) => {
@@ -71,71 +65,52 @@ exports.setProjectIAMPolicy = async (projectId, iamPolicy) => {
 };
 
 exports.createServiceAccount = async (projectId) => {
-    var req = {
-        name: 'projects/' + projectId,
+    const iam = google.iam('v1');
+    const req = {
+        name: `projects/${projectId}`,
         requestBody: {
-            'accountId': 'cloudguard-connect',
-            'serviceAccount': {
-                'displayName': 'CloudGuard-Connect'
-            }
+            accountId: 'cloudguard-connect',
+            serviceAccount: { displayName: 'CloudGuard-Connect' }
         }
     };
-    var r = await google.iam('v1').projects.serviceAccounts.create(req);
-    return r ? r.data : {};
+    const response = await iam.projects.serviceAccounts.create(req);
+    return response.data;
 };
 
 exports.deleteServiceAccountKeys = async (projectId, serviceAccountEmail) => {
-    var params = {
-        name: 'projects/' + projectId + '/serviceAccounts/' + serviceAccountEmail
-    };
-    var r = await google.iam('v1').projects.serviceAccounts.keys.list(params);
-    var keys = r ? r.data.keys : [];
-    var promises = [];
-    for (let key of keys) {
-        if (key['keyType'] == 'USER_MANAGED') {
-            promises.push(google.iam('v1').projects.serviceAccounts.keys.delete({name: key['name']}));
-        }
-    }
-    await Q.all(promises);
+    const iam = google.iam('v1');
+    const params = { name: `projects/${projectId}/serviceAccounts/${serviceAccountEmail}` };
+    const response = await iam.projects.serviceAccounts.keys.list(params);
+
+    const keys = response.data.keys || [];
+    const deletePromises = keys
+        .filter(key => key.keyType === 'USER_MANAGED')
+        .map(key => iam.projects.serviceAccounts.keys.delete({ name: key.name }));
+
+    await Promise.all(deletePromises);
 };
 
 exports.createServiceAccountKey = async (projectId, serviceAccountEmail) => {
-    var params = {
-        name: 'projects/' + projectId + '/serviceAccounts/' + serviceAccountEmail
-    };
-    var r = await google.iam('v1').projects.serviceAccounts.keys.create(params);
-    return r ? r.data : {};
+    const iam = google.iam('v1');
+    const params = { name: `projects/${projectId}/serviceAccounts/${serviceAccountEmail}` };
+    const response = await iam.projects.serviceAccounts.keys.create(params);
+    return response.data;
 };
 
 exports.getCloudGuardServiceAccount = async (projectId) => {
-    // TODO: Need to handle projects with more than 100 service accounts.
-    var result = {};
-    var req = {
-        name: 'projects/' + projectId,
-        pageSize: GCP_PROJECT_LIST_LIMIT
-    };
-    var r = await google.iam('v1').projects.serviceAccounts.list(req);
-    var serviceAccounts = r ? r.data : {};
-    if (serviceAccounts['accounts']) {
-        serviceAccounts['accounts'].forEach(account => {
-            if (
-                (account['email'].startsWith('cloudguard-connect@')) &&
-                (account['displayName'] == 'CloudGuard-Connect')
-            ) {
-                result = account
-            }
-        });
-    }
-    return result;
+    const iam = google.iam('v1');
+    const req = { name: `projects/${projectId}`, pageSize: GCP_PROJECT_LIST_LIMIT };
+    const response = await iam.projects.serviceAccounts.list(req);
+    const serviceAccounts = response.data.accounts || [];
+
+    return serviceAccounts.find(account =>
+        account.email.startsWith('cloudguard-connect@') && account.displayName === 'CloudGuard-Connect'
+    ) || {};
 };
 
 function parsePatterns(patternsStr) {
     if (!patternsStr.trim()) return [];
     return patternsStr.split(/\s+/).filter(Boolean);
-}
-
-function buildBaseFilter() {
-    return 'lifecycleState:active AND NOT labels.dome9ignore:true';
 }
 
 function wildcardMatch(text, pattern) {
@@ -153,18 +128,18 @@ function matchesPattern(name, patterns) {
 exports.listProjects = async () => {
     const excludePatterns = parsePatterns(process.env.EXCLUDE_PROJECTS || '');
     const includePatterns = parsePatterns(process.env.INCLUDE_PROJECTS || '');
-    const baseFilter = buildBaseFilter();
 
     try {
         let projects = [];
         let nextPageToken = '';
 
+        const cloudResourceManager = google.cloudresourcemanager('v1');
         do {
-            const r = await google.cloudresourcemanager('v1').projects.list({
+            const params = {
                 pageSize: GCP_PROJECT_LIST_LIMIT,
                 pageToken: nextPageToken,
-                filter: baseFilter
-            });
+            }
+            const r = await cloudResourceManager.projects.list(params);
             if (r.data.projects) {
                 projects = projects.concat(r.data.projects);
             }
@@ -182,42 +157,8 @@ exports.listProjects = async () => {
     }
 };
 
-exports.addOnboardedLabel = async (project, value = 'true') => {
-    var result = true;
-    var parent = project['parent'] ? project['parent'] : {};
-    var labels = project['labels'] ? project['labels'] : {};
-    labels.dome9onboarded = value;
-    var req;
-    if (!Object.keys(parent).length) {
-        // have to exclude parent in a project NOT under an organization
-        req = {
-            projectId: project['projectId'],
-            requestBody: {
-                labels: labels
-            }
-        };
-    } else {
-        // have to include parent in a project under an organization
-        req = {
-            projectId: project['projectId'],
-            requestBody: {
-                labels: labels,
-                parent: parent
-            }
-        };
-    }
-    try {
-        var r = await google.cloudresourcemanager('v1').projects.update(req);
-    } catch (e) {
-        console.log(e);
-        result = false;
-    }
-    ;
-    return result;
-};
-
 exports.enableRequiredAPIServices = async (projectId) => {
-    var svcmgmt = google.servicemanagement('v1');
+    var serviceUsage = google.serviceusage('v1');
     var svcNames = [
         'compute.googleapis.com',
         'cloudresourcemanager.googleapis.com',
@@ -263,42 +204,32 @@ exports.enableRequiredAPIServices = async (projectId) => {
         'storagetransfer.googleapis.com',
         'translate.googleapis.com'
     ];
-    var promises = [];
-    for (let svcName of svcNames) {
-        params = {
-            consumerId: "project:" + projectId,
-            serviceName: svcName
+    let promises = svcNames.map(async (svcName) => {
+        try {
+            await serviceUsage.services.enable({
+                name: `projects/${projectId}/services/${svcName}`
+            });
+            console.log(`Successfully enabled service: ${svcName}`);
+        } catch (error) {
+            console.error(`Error enabling service: ${svcName}`, error.message);
         }
-        promises.push(Q.nfcall(svcmgmt.services.enable.bind(svcmgmt.services), params)
-            .catch(error => {
-                console.error('Error enabling service:', error.toString());
-                return null;
-            }));
-    }
-    await Q.all(promises);
+    });
+    await Promise.all(promises);
     return true;
 };
 
-const initGoogleAuthCredential = async () => {
-    var r = await google.auth.getApplicationDefault();
-    var client = r.credential;
-    if (client) {
-        try {
-            client = client.createScoped([
-                'https://www.googleapis.com/auth/cloud-platform',
-                'https://www.googleapis.com/auth/service.management'
-            ]);
-        } catch (e) {
-            if (e instanceof TypeError) {
-                // TypeError is thrown when deployed in GCP
-            } else {
-                throw e;
-            }
-        }
-    }
-    google.options({
-        auth: client
+exports.initGoogleAuthCredential = async () => {
+    const auth = new google.auth.GoogleAuth({
+        scopes: [
+            'https://www.googleapis.com/auth/cloud-platform',
+            'https://www.googleapis.com/auth/service.management'
+        ]
     });
-};
 
-initGoogleAuthCredential();
+    const authClient = await auth.getClient();
+    // Set global options to use the authenticated client
+    google.options({
+        auth: authClient
+    });
+    return authClient;
+};
