@@ -103,16 +103,16 @@ async function onboardAsync(p, cloudAccountsMap, missingPermissionsSet, retries 
         console.log(p['projectId'], "=>", "Created new 'CloudGuard-Connect' service account key");
         var saPrivateKeyData = Buffer.from(saKey['privateKeyData'], 'base64').toString();
         await createAccountAsync(p, saPrivateKeyData);
+        cloudAccountsMap.set(p['projectId'], true)
       }
       if (await gcp.enableRequiredAPIServices(p['projectId'])) {
-          console.log(`${p['projectId']} => Enabled all required API services in project`);
+        console.log(`${p['projectId']} => Enabled all required API services in project`);
       }
       return true;
     } catch (error) {
         if (retries === 0) {
-            failed++;
-            console.error(`${p['projectId']} => "Error onboarding project. No more retries.`, error);
-            return false;
+            console.error(`${p['projectId']} => "Error onboarding project. No more retries.`);
+            throw error;
         }
         console.log(`${p['projectId']} => Error onboarding project. Retrying... attempts left: ${retries - 1}`);
         await new Promise(res => setTimeout(res, delay));
@@ -123,14 +123,20 @@ async function onboardAsync(p, cloudAccountsMap, missingPermissionsSet, retries 
 const onboardGoogleProjects = async () => {
   var cloudAccountsMap = await dome9.getGoogleCloudAccountsMap();
   var missingPermissionsSet = await dome9.getMissingPermissionsSet();
-  var projects = await gcp.listProjects();
-  var total = projects.length;
+    await gcp.initGoogleAuthCredential();
+    var projects = await gcp.listProjects();
+    var total = projects.length;
   onboarded = 0;
   failed = 0;
 
   for (let p of projects) {
       console.log(`${p['projectId']} => Starting onboarding process`);
-      await onboardAsync(p, cloudAccountsMap, missingPermissionsSet);
+      try {
+          await onboardAsync(p, cloudAccountsMap, missingPermissionsSet);
+      } catch (error) {
+          failed++;
+          console.error(`${p['projectId']} => Error onboarding project`, error);
+      }
   }
   return {onboarded: onboarded, failed: failed, skipped: (total - onboarded - failed), total: total};
 };

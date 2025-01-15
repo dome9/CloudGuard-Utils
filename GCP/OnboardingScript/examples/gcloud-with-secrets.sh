@@ -1,18 +1,16 @@
 #!/bin/bash
 
 ##### MUST EDIT THE VALUES BELOW #####
-project_id=<your_project_id_goes_here>
-d9_id=<your_d9_api_id_goes_here>
-d9_secret=<your_d9_api_secret_goes_here>
-psk=<your_psk_goes_here>
+project_id=yohain1
+d9_id=a9da8953-6cd8-4e70-976b-a428b9c66d4d
+d9_secret=e9yp9jtu8q9qtuxezrqwc7cp
+psk=kcClcCOas/Vh9hYyhCWpIwuivTlsGDRl
 base_url=
 EXCLUDE_PROJECTS=
-INCLUDE_PROJECTS=
+INCLUDE_PROJECTS="dormoyal"
 ##### MUST EDIT THE VALUES ABOVE #####
 
 ##### NO NEED TO EDIT THE VALUES BELOW #####
-role_id=d9.autobrd
-role_title="D9 Autobrd"
 sa_id=d9-autobrd
 secrets_d9_id=d9_autobrd_d9_id
 secrets_d9_secret=d9_autobrd_d9_secret
@@ -20,24 +18,17 @@ secrets_psk=d9_autobrd_psk
 ##### NO NEED TO EDIT THE VALUES ABOVE #####
 
 # Roles
-VIEWER_ROLE="roles/viewer"
-IAM_SECURITY_REVIEWER="roles/iam.securityReviewer"
-CLOUD_ASSET_VIEWER="roles/cloudasset.viewer"
-SERVICE_USAGE_CONSUMER="roles/serviceusage.serviceUsageConsumer"
+IAM_ROLE="roles/resourcemanager.projectIamAdmin"
+SERVICE_ACCOUNT_ROLE="roles/iam.serviceAccountAdmin"
+SERVICE_ACCOUNT_KEY_ROLE="roles/iam.serviceAccountKeyAdmin"
+SERVICE_USAGE_ROLE="roles/serviceusage.serviceUsageAdmin"
 
-CSPM_ROLES_LIST=(
-  $VIEWER_ROLE
-  $IAM_SECURITY_REVIEWER
-  $CLOUD_ASSET_VIEWER
-  $SERVICE_USAGE_CONSUMER
+PROJECT_ROLES_LIST=(
+  $IAM_ROLE
+  $SERVICE_ACCOUNT_ROLE
+  $SERVICE_ACCOUNT_KEY_ROLE
+  $SERVICE_USAGE_ROLE
 )
-
-cat << EOF > custom.role.yaml
-title: $role_title
-description: Custom role for d9-autobrd-gcp cloud function
-includedPermissions:
-- iam.serviceAccounts.actAs
-EOF
 
 cat << EOF > d9_id.txt
 $d9_id
@@ -53,7 +44,7 @@ EOF
 
 cat << EOF > runtime.env.yaml
 D9_BASE_URL: "${base_url:-https://api.dome9.com/v2}"
-GCP_PROJECT_LIST_LIMIT: "10"
+GCP_PROJECT_LIST_LIMIT: "100"
 EXCLUDE_PROJECTS: "$EXCLUDE_PROJECTS"
 INCLUDE_PROJECTS: "$INCLUDE_PROJECTS"
 EOF
@@ -65,7 +56,6 @@ cat << EOF > .gcloudignore
 
 gcloud.sh
 gcloud-with-secrets.sh
-custom.role.yaml
 examples
 LICENSE
 node_modules
@@ -79,11 +69,7 @@ gcloud services enable iam.googleapis.com --project=$project_id
 gcloud services enable cloudresourcemanager.googleapis.com --project=$project_id
 gcloud services enable secretmanager.googleapis.com --project=$project_id
 
-gcloud iam roles create $role_id --project=$project_id --file=custom.role.yaml
-
 gcloud iam service-accounts create $sa_id --project=$project_id --description="The service account for the d9-autobrd-gcp cloud function" --display-name="D9 Autobrd"
-
-gcloud projects add-iam-policy-binding $project_id --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" --role="projects/$project_id/roles/$role_id"
 
 gcloud secrets delete $secrets_d9_id --project=$project_id
 gcloud secrets delete $secrets_d9_secret --project=$project_id
@@ -140,7 +126,7 @@ filtered_projects=$(gcloud projects list --format="value(projectId)" | while rea
     echo "$curr_project_id"
 done)
 
-for role in ${CSPM_ROLES_LIST[@]}; do
+for role in ${PROJECT_ROLES_LIST[@]}; do
   for binding_project_id in $filtered_projects; do
     gcloud projects add-iam-policy-binding $binding_project_id --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" --role=$role
   done
