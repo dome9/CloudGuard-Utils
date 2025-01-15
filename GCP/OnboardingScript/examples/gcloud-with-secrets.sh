@@ -6,8 +6,8 @@ d9_id=a9da8953-6cd8-4e70-976b-a428b9c66d4d
 d9_secret=e9yp9jtu8q9qtuxezrqwc7cp
 psk=kcClcCOas/Vh9hYyhCWpIwuivTlsGDRl
 base_url=
-EXCLUDE_PROJECTS=
-INCLUDE_PROJECTS="dormoyal"
+EXCLUDE_PROJECTS="chkp-*"
+INCLUDE_PROJECTS=
 ##### MUST EDIT THE VALUES ABOVE #####
 
 ##### NO NEED TO EDIT THE VALUES BELOW #####
@@ -64,39 +64,77 @@ README.md
 runtime.env.yaml
 EOF
 
+echo "Enabling cloudbuild.googleapis.com"
 gcloud services enable cloudbuild.googleapis.com --project=$project_id
+echo "Enabling cloudfunctions.googleapis.com"
 gcloud services enable iam.googleapis.com --project=$project_id
+echo "Enabling cloudresourcemanager.googleapis.com"
 gcloud services enable cloudresourcemanager.googleapis.com --project=$project_id
+echo "Enabling secretmanager.googleapis.com"
 gcloud services enable secretmanager.googleapis.com --project=$project_id
 
-gcloud iam service-accounts create $sa_id --project=$project_id --description="The service account for the d9-autobrd-gcp cloud function" --display-name="D9 Autobrd"
+error_message=$(gcloud iam service-accounts create $sa_id \
+  --project=$project_id \
+  --description="The service account for the d9-autobrd-gcp cloud function" \
+  --display-name="D9 Autobrd" 2>&1)
 
-gcloud secrets delete $secrets_d9_id --project=$project_id
-gcloud secrets delete $secrets_d9_secret --project=$project_id
-gcloud secrets delete $secrets_psk --project=$project_id
+if [[ $error_message == *"already exists"* ]]; then
+  echo "Service account '$sa_id' already exists in project '$project_id'."
+else
+  # If there was some other error or success, you can handle it differently
+  if [[ $? -eq 0 ]]; then
+    echo "Service account '$sa_id' created successfully in project '$project_id'."
+  else
+    echo "Failed to create service account '$sa_id' in project '$project_id'. Error: $error_message"
+  fi
+fi
 
-gcloud secrets create $secrets_d9_id --project=$project_id
-gcloud secrets create $secrets_d9_secret --project=$project_id
-gcloud secrets create $secrets_psk --project=$project_id
 
-gcloud secrets versions add $secrets_d9_id --data-file="d9_id.txt" --project=$project_id
-gcloud secrets versions add $secrets_d9_secret --data-file="d9_secret.txt" --project=$project_id
-gcloud secrets versions add $secrets_psk --data-file="psk.txt" --project=$project_id
+secrets=("$secrets_d9_id" "$secrets_d9_secret" "$secrets_psk")
+files=("d9_id.txt" "d9_secret.txt" "psk.txt")
 
-rm d9_id.txt d9_secret.txt psk.txt
+echo "Creating D9 Autobrd secrets in project '$project_id'..."
+echo "Deleting existing D9 Autobrd secrets..."
+# Delete secrets
+for secret in "${secrets[@]}"; do
+  gcloud secrets delete $secret --project=$project_id --quiet > /dev/null 2>&1
+done
 
-gcloud secrets add-iam-policy-binding $secrets_d9_id --project=$project_id --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding $secrets_d9_secret --project=$project_id --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding $secrets_psk --project=$project_id --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"
+# Create secrets
+for secret in "${secrets[@]}"; do
+  gcloud secrets create $secret --project=$project_id
+done
 
-secrets_rp_d9_id=$(gcloud secrets describe $secrets_d9_id --project=$project_id |grep "name:" |awk '{ print $2 }')
-secrets_rp_d9_secret=$(gcloud secrets describe $secrets_d9_secret --project=$project_id |grep "name:" |awk '{ print $2 }')
-secrets_rp_psk=$(gcloud secrets describe $secrets_psk --project=$project_id |grep "name:" |awk '{ print $2 }')
+# Add versions to secrets
+for i in "${!secrets[@]}"; do
+  gcloud secrets versions add ${secrets[$i]} --data-file="${files[$i]}" --project=$project_id
+done
 
-echo "Resource paths for new secrets:"
-echo $secrets_rp_d9_id
-echo $secrets_rp_d9_secret
-echo $secrets_rp_psk
+# Remove files
+rm "${files[@]}"
+
+# Add IAM policy bindings
+for secret in "${secrets[@]}"; do
+  output_message=$(gcloud secrets add-iam-policy-binding $secret \
+    --project=$project_id \
+    --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor" 2>&1)
+
+  if [[ $? -eq 0 ]]; then
+    echo "Successfully added IAM policy binding for service account '$sa_id' to secret '$secret'."
+  else
+    echo "Failed to add IAM policy binding for service account '$sa_id' to secret '$secret'. Error: $output_message" >&2
+  fi
+done
+
+  secrets_rp_d9_id=$(gcloud secrets describe $secrets_d9_id --project=$project_id |grep "name:" |awk '{ print $2 }')
+  secrets_rp_d9_secret=$(gcloud secrets describe $secrets_d9_secret --project=$project_id |grep "name:" |awk '{ print $2 }')
+  secrets_rp_psk=$(gcloud secrets describe $secrets_psk --project=$project_id |grep "name:" |awk '{ print $2 }')
+
+  echo "Resource paths for new secrets:"
+  echo $secrets_rp_d9_id
+  echo $secrets_rp_d9_secret
+  echo $secrets_rp_psk
 
 # Function to check if a string matches any pattern in a space-separated list
 match_patterns() {
@@ -126,12 +164,22 @@ filtered_projects=$(gcloud projects list --format="value(projectId)" | while rea
     echo "$curr_project_id"
 done)
 
-for role in ${PROJECT_ROLES_LIST[@]}; do
-  for binding_project_id in $filtered_projects; do
-    gcloud projects add-iam-policy-binding $binding_project_id --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" --role=$role
+for binding_project_id in $filtered_projects; do
+  echo "Adding roles to project '$binding_project_id' for service account '$sa_id'..."
+  for role in "${PROJECT_ROLES_LIST[@]}"; do
+    output_message=$(gcloud projects add-iam-policy-binding $binding_project_id \
+      --member="serviceAccount:$sa_id@$project_id.iam.gserviceaccount.com" \
+      --role=$role 2>&1)
+
+    if [[ $? -eq 0 ]]; then
+      echo "Project '$binding_project_id' - Successfully added role '$role' for service account '$sa_id'."
+    else
+      echo "Project '$binding_project_id' - failed to adde role '$role' for service account '$sa_id'. Error: $output_message" >&2
+    fi
   done
 done
 
+echo "Deploying the cloud function..."
 gcloud beta functions deploy d9AutobrdOnboard --project $project_id --trigger-http --runtime nodejs20 --service-account $sa_id@$project_id.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --timeout 540 --env-vars-file runtime.env.yaml --set-secrets="D9_ID=$secrets_rp_d9_id:1,D9_SECRET=$secrets_rp_d9_secret:1,PSK=$secrets_rp_psk:1"
 
 exit $?
