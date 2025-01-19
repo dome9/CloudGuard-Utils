@@ -70,6 +70,8 @@ echo "Enabling cloudfunctions.googleapis.com"
 gcloud services enable iam.googleapis.com --project=$project_id
 echo "Enabling cloudresourcemanager.googleapis.com"
 gcloud services enable cloudresourcemanager.googleapis.com --project=$project_id
+echo "Enabling serviceusage.googleapis.com"
+gcloud services enable serviceusage.googleapis.com --project=$project_id
 echo "Enabling secretmanager.googleapis.com"
 gcloud services enable secretmanager.googleapis.com --project=$project_id
 

@@ -16,6 +16,17 @@ const {google} = require('googleapis');
 
 const GCP_PROJECT_LIST_LIMIT = process.env.GCP_PROJECT_LIST_LIMIT || 100;
 
+const getAuthClient = async () => {
+    const auth = new google.auth.GoogleAuth({
+        scopes: [
+            'https://www.googleapis.com/auth/cloud-platform',
+            'https://www.googleapis.com/auth/service.management'
+        ]
+    });
+
+    return await auth.getClient();
+};
+
 exports.updateProjectIAMPolicy = async (project, serviceAccount) => {
     const member = `serviceAccount:${serviceAccount.email}`;
     const iamPolicy = await this.getProjectIAMPolicy(project.projectId);
@@ -158,10 +169,19 @@ exports.listProjects = async () => {
 };
 
 exports.enableRequiredAPIServices = async (projectId) => {
-    var serviceUsage = google.serviceusage('v1');
+    // Get auth client and set quota project
+    const authClient = await getAuthClient();
+    authClient.quotaProjectId = projectId;
+
+    const serviceUsage = google.serviceusage({
+        version: 'v1',
+        auth: authClient
+    });
+
     var svcNames = [
         'compute.googleapis.com',
         'cloudresourcemanager.googleapis.com',
+        'serviceusage.googleapis.com',
         'iam.googleapis.com',
         'cloudkms.googleapis.com',
         'container.googleapis.com',
@@ -173,7 +193,6 @@ exports.enableRequiredAPIServices = async (projectId) => {
         'redis.googleapis.com',
         'appengine.googleapis.com',
         'file.googleapis.com',
-        'serviceusage.googleapis.com',
         'accessapproval.googleapis.com',
         'essentialcontacts.googleapis.com',
         'cloudasset.googleapis.com',
@@ -219,14 +238,7 @@ exports.enableRequiredAPIServices = async (projectId) => {
 };
 
 exports.initGoogleAuthCredential = async () => {
-    const auth = new google.auth.GoogleAuth({
-        scopes: [
-            'https://www.googleapis.com/auth/cloud-platform',
-            'https://www.googleapis.com/auth/service.management'
-        ]
-    });
-
-    const authClient = await auth.getClient();
+    const authClient = await getAuthClient();
     // Set global options to use the authenticated client
     google.options({
         auth: authClient
