@@ -13,18 +13,30 @@
 // limitations under the License.
 
 const {google} = require('googleapis');
+const dome9 = require("./dome9");
 
 const GCP_PROJECT_LIST_LIMIT = process.env.GCP_PROJECT_LIST_LIMIT || 100;
+
+const getAuthClient = async () => {
+    const auth = new google.auth.GoogleAuth({
+        scopes: [
+            'https://www.googleapis.com/auth/cloud-platform',
+            'https://www.googleapis.com/auth/service.management'
+        ]
+    });
+
+    return await auth.getClient();
+};
 
 exports.updateProjectIAMPolicy = async (project, serviceAccount) => {
     const member = `serviceAccount:${serviceAccount.email}`;
     const iamPolicy = await this.getProjectIAMPolicy(project.projectId);
 
     const rolesToAdd = [
-        { role: 'roles/viewer', pushed: false },
-        { role: 'roles/iam.securityReviewer', pushed: false },
-        { role: 'roles/cloudasset.viewer', pushed: false },
-        { role: 'roles/serviceusage.serviceUsageConsumer', pushed: false },
+        {role: 'roles/viewer', pushed: false},
+        {role: 'roles/iam.securityReviewer', pushed: false},
+        {role: 'roles/cloudasset.viewer', pushed: false},
+        {role: 'roles/serviceusage.serviceUsageConsumer', pushed: false},
     ];
 
     iamPolicy.bindings.forEach(binding => {
@@ -40,7 +52,7 @@ exports.updateProjectIAMPolicy = async (project, serviceAccount) => {
 
     rolesToAdd.forEach(roleObj => {
         if (!roleObj.pushed) {
-            iamPolicy.bindings.push({ role: roleObj.role, members: [member] });
+            iamPolicy.bindings.push({role: roleObj.role, members: [member]});
         }
     });
 
@@ -70,7 +82,7 @@ exports.createServiceAccount = async (projectId) => {
         name: `projects/${projectId}`,
         requestBody: {
             accountId: 'cloudguard-connect',
-            serviceAccount: { displayName: 'CloudGuard-Connect' }
+            serviceAccount: {displayName: 'CloudGuard-Connect'}
         }
     };
     const response = await iam.projects.serviceAccounts.create(req);
@@ -79,27 +91,27 @@ exports.createServiceAccount = async (projectId) => {
 
 exports.deleteServiceAccountKeys = async (projectId, serviceAccountEmail) => {
     const iam = google.iam('v1');
-    const params = { name: `projects/${projectId}/serviceAccounts/${serviceAccountEmail}` };
+    const params = {name: `projects/${projectId}/serviceAccounts/${serviceAccountEmail}`};
     const response = await iam.projects.serviceAccounts.keys.list(params);
 
     const keys = response.data.keys || [];
     const deletePromises = keys
         .filter(key => key.keyType === 'USER_MANAGED')
-        .map(key => iam.projects.serviceAccounts.keys.delete({ name: key.name }));
+        .map(key => iam.projects.serviceAccounts.keys.delete({name: key.name}));
 
     await Promise.all(deletePromises);
 };
 
 exports.createServiceAccountKey = async (projectId, serviceAccountEmail) => {
     const iam = google.iam('v1');
-    const params = { name: `projects/${projectId}/serviceAccounts/${serviceAccountEmail}` };
+    const params = {name: `projects/${projectId}/serviceAccounts/${serviceAccountEmail}`};
     const response = await iam.projects.serviceAccounts.keys.create(params);
     return response.data;
 };
 
 exports.getCloudGuardServiceAccount = async (projectId) => {
     const iam = google.iam('v1');
-    const req = { name: `projects/${projectId}`, pageSize: GCP_PROJECT_LIST_LIMIT };
+    const req = {name: `projects/${projectId}`, pageSize: GCP_PROJECT_LIST_LIMIT};
     const response = await iam.projects.serviceAccounts.list(req);
     const serviceAccounts = response.data.accounts || [];
 
@@ -158,10 +170,19 @@ exports.listProjects = async () => {
 };
 
 exports.enableRequiredAPIServices = async (projectId) => {
-    var serviceUsage = google.serviceusage('v1');
+    // Get auth client and set quota project
+    const authClient = await getAuthClient();
+    authClient.quotaProjectId = projectId;
+
+    const serviceUsage = google.serviceusage({
+        version: 'v1',
+        auth: authClient
+    });
+
     var svcNames = [
         'compute.googleapis.com',
         'cloudresourcemanager.googleapis.com',
+        'serviceusage.googleapis.com',
         'iam.googleapis.com',
         'cloudkms.googleapis.com',
         'container.googleapis.com',
@@ -173,7 +194,6 @@ exports.enableRequiredAPIServices = async (projectId) => {
         'redis.googleapis.com',
         'appengine.googleapis.com',
         'file.googleapis.com',
-        'serviceusage.googleapis.com',
         'accessapproval.googleapis.com',
         'essentialcontacts.googleapis.com',
         'cloudasset.googleapis.com',
@@ -205,28 +225,31 @@ exports.enableRequiredAPIServices = async (projectId) => {
         'translate.googleapis.com'
     ];
     let promises = svcNames.map(async (svcName) => {
-        try {
-            await serviceUsage.services.enable({
-                name: `projects/${projectId}/services/${svcName}`
-            });
-            console.log(`Successfully enabled service: ${svcName}`);
-        } catch (error) {
-            console.error(`Error enabling service: ${svcName}`, error.message);
-        }
+        await enableService(serviceUsage, svcName, projectId);
     });
     await Promise.all(promises);
     return true;
 };
 
-exports.initGoogleAuthCredential = async () => {
-    const auth = new google.auth.GoogleAuth({
-        scopes: [
-            'https://www.googleapis.com/auth/cloud-platform',
-            'https://www.googleapis.com/auth/service.management'
-        ]
-    });
+async function enableService(serviceUsage, svcName, projectId, retries = 3, delay = 1000) {
+    try {
+        await serviceUsage.services.enable({
+            name: `projects/${projectId}/services/${svcName}`
+        });
+        console.log(`Successfully enabled service: ${svcName}`);
+    } catch (error) {
+        if (retries === 0) {
+            console.error(`Error enabling service: ${svcName}`, error.message);
+        } else {
+            console.log(`Error enabling service: ${svcName}. Retrying... attempts left: ${retries - 1}`);
+            await new Promise(res => setTimeout(res, delay));
+            return enableService(serviceUsage, svcName, projectId, retries - 1, delay + 1000);
+        }
+    }
+}
 
-    const authClient = await auth.getClient();
+exports.initGoogleAuthCredential = async () => {
+    const authClient = await getAuthClient();
     // Set global options to use the authenticated client
     google.options({
         auth: authClient

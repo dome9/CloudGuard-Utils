@@ -88,24 +88,24 @@ async function createAccountAsync(p, saPrivateKeyData, retries = 5, delay = 1000
 }
 
 async function onboardAsync(p, cloudAccountsMap) {
-        if (clearToBoard(p, cloudAccountsMap)) {
-            let serviceAccount = await gcp.getCloudGuardServiceAccount(p['projectId']);
-            if (!serviceAccount['email']) {
-                serviceAccount = await gcp.createServiceAccount(p['projectId']);
-                console.log(`p['projectId'] => Created 'CloudGuard-Connect' service account`);
-            } else {
-                console.log(`p['projectId'] => 'CloudGuard-Connect' service account already exists`);
-                await gcp.deleteServiceAccountKeys(p['projectId'], serviceAccount['email']);
-                console.log(p['projectId'], "=>", "Deleted existing 'CloudGuard-Connect' service account keys");
-            }
-            await gcp.updateProjectIAMPolicy(p, serviceAccount);
-            const saKey = await gcp.createServiceAccountKey(p['projectId'], serviceAccount['email']);
-            console.log(p['projectId'], "=>", "Created new 'CloudGuard-Connect' service account key");
-            const saPrivateKeyData = Buffer.from(saKey['privateKeyData'], 'base64').toString();
-            await createAccountAsync(p, saPrivateKeyData);
-            cloudAccountsMap.set(p['projectId'], true)
+    await gcp.enableRequiredAPIServices(p['projectId']);
+    if (clearToBoard(p, cloudAccountsMap)) {
+        let serviceAccount = await gcp.getCloudGuardServiceAccount(p['projectId']);
+        if (!serviceAccount['email']) {
+            serviceAccount = await gcp.createServiceAccount(p['projectId']);
+            console.log(`p['projectId'] => Created 'CloudGuard-Connect' service account`);
+        } else {
+            console.log(`p['projectId'] => 'CloudGuard-Connect' service account already exists`);
+            await gcp.deleteServiceAccountKeys(p['projectId'], serviceAccount['email']);
+            console.log(p['projectId'], "=>", "Deleted existing 'CloudGuard-Connect' service account keys");
         }
-        await gcp.enableRequiredAPIServices(p['projectId']);
+        await gcp.updateProjectIAMPolicy(p, serviceAccount);
+        const saKey = await gcp.createServiceAccountKey(p['projectId'], serviceAccount['email']);
+        console.log(p['projectId'], "=>", "Created new 'CloudGuard-Connect' service account key");
+        const saPrivateKeyData = Buffer.from(saKey['privateKeyData'], 'base64').toString();
+        await createAccountAsync(p, saPrivateKeyData);
+        cloudAccountsMap.set(p['projectId'], true)
+    }
 }
 
 const onboardGoogleProjects = async () => {
