@@ -88,6 +88,7 @@ async function createAccountAsync(p, saPrivateKeyData, retries = 5, delay = 1000
 }
 
 async function onboardAsync(p, cloudAccountsMap) {
+        await gcp.enableRequiredAPIServices(p['projectId']);
         if (clearToBoard(p, cloudAccountsMap)) {
             let serviceAccount = await gcp.getCloudGuardServiceAccount(p['projectId']);
             if (!serviceAccount['email']) {
@@ -105,7 +106,6 @@ async function onboardAsync(p, cloudAccountsMap) {
             await createAccountAsync(p, saPrivateKeyData);
             cloudAccountsMap.set(p['projectId'], true)
         }
-        await gcp.enableRequiredAPIServices(p['projectId']);
 }
 
 const onboardGoogleProjects = async () => {
