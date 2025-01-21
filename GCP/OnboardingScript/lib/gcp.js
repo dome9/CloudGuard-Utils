@@ -13,9 +13,11 @@
 // limitations under the License.
 
 const {google} = require('googleapis');
-const dome9 = require("./dome9");
 
 const GCP_PROJECT_LIST_LIMIT = process.env.GCP_PROJECT_LIST_LIMIT || 100;
+const MAX_RETRIES = 10;
+
+exports.MAX_RETRIES = MAX_RETRIES;
 
 const getAuthClient = async () => {
     const auth = new google.auth.GoogleAuth({
@@ -43,8 +45,7 @@ exports.updateProjectIAMPolicy = async (project, serviceAccount) => {
         rolesToAdd.forEach(roleObj => {
             if (binding.role === roleObj.role) {
                 if (!binding.members.includes(member)) {
-                    binding.members.push(member);
-                    roleObj.pushed = true;
+                    updateIamPolicyBindings(roleObj, binding, member);
                 }
             }
         });
@@ -52,12 +53,44 @@ exports.updateProjectIAMPolicy = async (project, serviceAccount) => {
 
     rolesToAdd.forEach(roleObj => {
         if (!roleObj.pushed) {
-            iamPolicy.bindings.push({role: roleObj.role, members: [member]});
+            pushBinding(roleObj, iamPolicy, member);
         }
     });
 
     return await this.setProjectIAMPolicy(project.projectId, iamPolicy);
 };
+
+async function updateIamPolicyBindings(roleObj, binding, member, retries = MAX_RETRIES, delay = 1000) {
+    try {
+        binding.members.push(member);
+        roleObj.pushed = true;
+
+    } catch (error) {
+        if (retries === 0) {
+            console.error(`Error updating IAM policy bindings: ${roleObj}`, error.message);
+            throw error;
+        } else {
+            console.log(`Error updating IAM policy bindings: ${roleObj}. Retrying... attempts left: ${retries - 1}`);
+            await new Promise(res => setTimeout(res, delay));
+            return updateIamPolicyBindings(roleObj, binding, member, retries - 1, delay + 1000);
+        }
+    }
+}
+
+async function pushBinding(roleObj, iamPolicy, member, retries = MAX_RETRIES, delay = 1000) {
+    try {
+        iamPolicy.bindings.push({role: roleObj.role, members: [member]});
+    } catch (error) {
+        if (retries === 0) {
+            console.error(`Error pushing IAM policy bindings: ${roleObj}`, error.message);
+            throw error;
+        } else {
+            console.log(`Error pushing IAM policy bindings: ${roleObj}. Retrying... attempts left: ${retries - 1}`);
+            await new Promise(res => setTimeout(res, delay));
+            return pushBinding(roleObj, iamPolicy, member, retries - 1, delay + 1000);
+        }
+    }
+}
 
 exports.getProjectIAMPolicy = async (projectId) => {
     const req = {
@@ -67,12 +100,23 @@ exports.getProjectIAMPolicy = async (projectId) => {
     return r ? r.data : {};
 };
 
-exports.setProjectIAMPolicy = async (projectId, iamPolicy) => {
+exports.setProjectIAMPolicy = async (projectId, iamPolicy, retries = MAX_RETRIES, delay = 1000) => {
     var req = {
         resource: projectId,
         requestBody: {"policy": iamPolicy}
     };
-    var r = await google.cloudresourcemanager('v1').projects.setIamPolicy(req);
+    try {
+        var r = await google.cloudresourcemanager('v1').projects.setIamPolicy(req);
+    } catch (error) {
+        if (retries === 0) {
+            console.error("Error setting project IAM policy:", error.message);
+            throw error;
+        } else {
+            console.log("Error setting project IAM policy. Retrying... attempts left:", retries - 1);
+            await new Promise(res => setTimeout(res, delay));
+            return this.setProjectIAMPolicy(projectId, iamPolicy, retries - 1, delay + 1000);
+        }
+    }
     return r ? r.data : {};
 };
 
@@ -231,7 +275,7 @@ exports.enableRequiredAPIServices = async (projectId) => {
     return true;
 };
 
-async function enableService(serviceUsage, svcName, projectId, retries = 3, delay = 1000) {
+async function enableService(serviceUsage, svcName, projectId, retries = MAX_RETRIES, delay = 1000) {
     try {
         await serviceUsage.services.enable({
             name: `projects/${projectId}/services/${svcName}`

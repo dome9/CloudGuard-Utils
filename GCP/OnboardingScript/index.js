@@ -68,7 +68,7 @@ exports.d9AutobrdOnboard = async (req, res) => {
     res.send(jsonResp);
 };
 
-async function createAccountAsync(p, saPrivateKeyData, retries = 5, delay = 1000) {
+async function createAccountAsync(p, saPrivateKeyData, retries = gcp.MAX_RETRIES, delay = 1000) {
     try {
         const r = await dome9.createGoogleCloudAccount(p['name'], JSON.parse(saPrivateKeyData));
         if (r.id) {
